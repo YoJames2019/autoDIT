@@ -18,32 +18,19 @@ def main():
     for videopath in videopaths:
         frames = extract_frames(videopath, 10, 800, 800)
         
-        # for each frame of that video, pass that frame to the clapboardrecognition class which will then:
-        detected = []
-        for frame in frames:
-            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-
-            # check for a clapboard in that image
-            clapboard_results = clapboard_model.predict(frame, conf=0.75)
-            # if there is a clapboard, it will crop the image to JUST the clapboard
-
-            clapboard_coords = clapboard_results[0]
-            if len(clapboard_coords.boxes) > 0:
-                cx, cy, cw, ch = clapboard_coords.boxes[0].xywh.cpu().numpy()[0].astype(int)
-
-                ncw = math.ceil(cw/2)
-                nch = math.ceil(ch/2)
-                frame = frame[max(0, cy-nch):max(0, cy+nch), max(0, cx-ncw):max(0, cx+ncw)]
-
-                # then pass the cropped image to the function to recognize the text on the clapboard
-                text_results = clapboard_text_model.predict(frame, conf=0.80)
-                # then validate the clapboard text against the ninjav format and against the actual video file name
-
-                # if it cannot find a clapboard, find text, and validate the text:
-                #   it will pass the video back to the parser with tail=True
-                # if it found all this correctly, it will then move the video to its correct directory
-                cv2.imshow("frame", text_results[0].plot())
-                cv2.waitKey(41)
+        detected = detect_best_clapboard_info(frames)
+        for clapboard in detected:
+            print(clapboard['confs'])
+            print(clapboard['boxes'])
+        # if it cannot find a clapboard, find text, and validate the text:
+        if len(detected) < 1:
+            # it will pass the video back to the parser with tail=True
+            frames = extract_frames(videopath, 10, 800, 800, True)
+            detected = detect_best_clapboard_info(frames)
+            # if it found all this correctly, it will then check
+            # if the video file name is the same as predicted:
+            #   move the video to its correct directory
+            # if not, move the video file to the "Manual Review Required" folder
 
 # This function scans the directory at the given path for video files
 # or subdirectories and prints information about them
@@ -80,6 +67,45 @@ def scan_dir(dir_path):
         print(f"Absolute path: {os.path.abspath(dir_path)}")
     return videos;
 
+def detect_best_clapboard_info(frames):
+    # for each frame of that video, pass that frame to the clapboardrecognition class which will then:
+        detected = []
+        for i, frame in enumerate(frames):
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+            # check for a clapboard in that image
+            clapboard_results = clapboard_model.predict(frame, conf=0.75)
+            clapboard_coords = clapboard_results[0]
+
+            # if there is a clapboard, it will crop the image to JUST the clapboard
+            if len(clapboard_coords.boxes) > 0:
+                cx, cy, cw, ch = clapboard_coords.boxes[0].xywh.cpu().numpy()[0].astype(int)
+                ncw = math.ceil(cw/2)
+                nch = math.ceil(ch/2)
+
+                frame = frame[max(0, cy-nch):max(0, cy+nch), max(0, cx-ncw):max(0, cx+ncw)]
+
+                # then pass the cropped image to the function to recognize the text on the clapboard
+                text_results = clapboard_text_model.predict(frame, conf=0.80)
+                # then validate the clapboard text against the ninjav format
+
+                probs = []
+                boxes = []
+                
+                for r in text_results:
+
+                    boxes = [b for b in r.boxes.xywh.cpu().numpy().astype(int)]
+                    confs = [c for c in r.boxes.conf.cpu().numpy()]
+                    
+                    # box = r.boxes.xywh.cpu().numpy()[0].astype(int)
+                    # print()
+                    # boxes.append(r.boxes.xywh.cpu().numpy()[0].astype(int))
+                    # probs.append(r.boxes.conf.cpu().numpy()[0])
+
+                detected.append({'frame': frame, 'confs': round(sum(confs)/len(confs), 4), 'boxes': boxes})
+
+        return detected
+
 def extract_frames(video_path, sec, width, height, tail=False):
     # Get the duration of the video
     duration_cmd = ['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', video_path]
@@ -94,7 +120,7 @@ def extract_frames(video_path, sec, width, height, tail=False):
         end_time = min(sec, duration)
     
     # Extract frames from the video
-    extract_cmd = ['ffmpeg', '-i', video_path, '-ss', str(start_time), '-t', str(end_time - start_time), '-vf', f'scale=w={width}:h={height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2', '-q:v', '2', '-f', 'image2pipe', '-pix_fmt', 'rgb24', '-vcodec', 'rawvideo', '-']
+    extract_cmd = ['ffmpeg', '-i', video_path, '-ss', str(start_time), '-t', str(end_time - start_time), '-vf', f'scale=w={width}:h={height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2' + (',vflip' if tail else ''), '-q:v', '2', '-f', 'image2pipe', '-pix_fmt', 'rgb24', '-vcodec', 'rawvideo', '-']
     frames_raw = subprocess.check_output(extract_cmd)
     
     # Convert the raw frames to a numpy array
