@@ -69,6 +69,9 @@ def detect_best_clapboard_info(frames):
                     
                     #sort the matches by x distance from each other
                     matches_sorted = sorted(matches, key=lambda x: calculate_distance((x[0] + x[2]/2, x[1] + x[3]/2), (0, 0)))
+
+                    #fix pylance screaming at me about "names" MAYBE not being a thing at some point in the future
+                    assert clapboard_text_model.names
                     #replace the class ids with the actual class names
                     matches_sorted = [sub[:4] + [num_conversions[clapboard_text_model.names[int(sub[5])]]] for sub in matches_sorted]
 
