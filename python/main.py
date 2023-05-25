@@ -1,98 +1,22 @@
-import os
 import sys
 import subprocess
-import numpy as np
-import cv2
+import pkg_resources
+
+required_packages = {'numpy', 'opencv-python', 'ultralytics'}
+installed = {pkg.key for pkg in pkg_resources.working_set}
+missing = required - installed
+
+if missing:
+    python = sys.executable
+    subprocess.check_call([python, '-m', 'pip', 'install', *missing], stdout=subprocess.DEVNULL)
+
 import math
 import fnmatch
-from ultralytics import YOLO
 import shutil
-
-num_conversions = {
-    'one': 1,
-    'two': 2,
-    'three': 3,
-    'four': 4,
-    'five': 5,
-    'six': 6,
-    'seven': 7,
-    'eight': 8,
-    'nine': 9,
-    'zero': 0
-}
-
-# check if the correct arguments were input
-if len(sys.argv) < 4:
-    print(f"Invalid syntax! Correct syntax is: \n{sys.executable} {os.path.abspath(__file__)} \"replace/with/path/to/folder/with/videos/\" \"replace/with/path/to/folder/with/audio/\" \"replace/with/path/to/output/folder/\"")
-    exit()
-
-# define the input video, input audio, and output directory variables from the arguments
-input_video_dir = sys.argv[1]
-input_audio_dir = sys.argv[2]
-output_video_dir = sys.argv[3]
-
-# check if both of those paths exist and if they don't, error
-for path in sys.argv[1:4]:
-    if not os.path.exists(path):
-        print(f"\nThe folder \"{path}\" does not exist!")
-        exit()
-
-# Instantiate the clapboard and clapboard text models
-clapboard_model = YOLO("./yolo_v8/weights_final/clapboard_best.pt")
-clapboard_text_model = YOLO("./yolo_v8/weights_final/clapboard_text_best.pt")
-
-def main():
-    # loop through all videos in a certain directory and all subdirectories
-    videopaths = find_video_files(input_video_dir)
-    # pass each video to a parser that will get the first 10 seconds (240 frames) of the video (and if tail=True it will get the last 240 frames of the video)
-    for videopath in videopaths:
-        print(f"\n{videopath} - ")
-        filename = os.path.basename(videopath)
-        proxy = "_proxy" in filename
-
-        frames = extract_frames(videopath, 10, 800, 800)
+import numpy as np
+import cv2
+from ultralytics import YOLO
         
-        print(f"{videopath} - Checking for clapboard")
-        detected = detect_best_clapboard_info(frames)
-
-        # if it cannot find a clapboard, find text, and validate the text:
-        if detected is None:
-            print(f"{videopath} - No clapboard detected, checking for tailslate")
-            # it will pass the video back to the parser with tail=True
-            frames = extract_frames(videopath, 10, 800, 800, True)
-            detected = detect_best_clapboard_info(frames)
-        
-        # if it still couldnt find a clapboard, set all the below variables to none 
-        scene, cam, shot, take = detected['results'] if detected else [None, None, None, None]
-
-        print(f"{videopath} - Found Clapboard Data:")
-        print("    Scene: " + str(scene))
-        print("    Camera: " + str(cam))
-        print("    Shot: " + str(shot))
-        print("    Take: " + str(take))
-
-        # if it found all this correctly, it will then check
-        # if the video file name is the same as predicted:
-        if f"s{scene}_s{shot}_t{take}." in filename.lower() or f"s{scene}_s{shot}_t{take}_proxy." in filename.lower():
-            print(f"{videopath} - Correct filename")
-
-            # move the video to its correct directory
-            copy_file_safe(videopath, os.path.join(output_video_dir, f"Scene {scene}/{'Proxy' if proxy else '4K'}"))
-            
-            # find the corresponding audio file from the input audio directory
-            audio_filepath = search_dir(input_audio_dir, f"{int(scene)}{chr(int(shot) + ord('a') - 1).upper()}_T{int(take)}.wav")
-            # rename and move the corresponding audio file to the correct directory
-            if audio_filepath is not None:
-                copy_file_safe(audio_filepath, os.path.join(output_video_dir, f"Scene {scene}/Audio"), f"S{scene}_S{shot}_T{take}{os.path.splitext(audio_filepath)[1]}")
-
-        else:
-            # if not, move the video file to the "Manual Review Required" directory
-            print(f"{videopath} - Incorrect filename")
-            
-            copy_file_safe(videopath, os.path.join(output_video_dir, "Manual Review Required"))
-
-
-
 def find_video_files(directory, extensions=['*.mp4', '*.mov']):
     video_files = []
     if os.path.exists(directory):
@@ -217,11 +141,94 @@ def copy_file_safe(filepath, dest_dir, filename=None, attempt=1):
             copy_file_safe(filepath, dest_dir, filename, attempt)
         
 
-        
-
 def calculate_distance(point1, point2):
     x1, y1 = point1
     x2, y2 = point2
     return math.sqrt((x1 - x2)**2 + (y1 - y2)**2)
+
+
+def main():
+    # loop through all videos in a certain directory and all subdirectories
+    videopaths = find_video_files(input_video_dir)
+    # pass each video to a parser that will get the first 10 seconds (240 frames) of the video (and if tail=True it will get the last 240 frames of the video)
+    for videopath in videopaths:
+        print(f"\n{videopath} - ")
+        filename = os.path.basename(videopath)
+        proxy = "_proxy" in filename
+
+        frames = extract_frames(videopath, 10, 800, 800)
+        
+        print(f"{videopath} - Checking for clapboard")
+        detected = detect_best_clapboard_info(frames)
+
+        # if it cannot find a clapboard, find text, and validate the text:
+        if detected is None:
+            print(f"{videopath} - No clapboard detected, checking for tailslate")
+            # it will pass the video back to the parser with tail=True
+            frames = extract_frames(videopath, 10, 800, 800, True)
+            detected = detect_best_clapboard_info(frames)
+        
+        # if it still couldnt find a clapboard, set all the below variables to none 
+        scene, cam, shot, take = detected['results'] if detected else [None, None, None, None]
+
+        print(f"{videopath} - Found Clapboard Data:")
+        print("    Scene: " + str(scene))
+        print("    Camera: " + str(cam))
+        print("    Shot: " + str(shot))
+        print("    Take: " + str(take))
+
+        # if it found all this correctly, it will then check
+        # if the video file name is the same as predicted:
+        if f"s{scene}_s{shot}_t{take}." in filename.lower() or f"s{scene}_s{shot}_t{take}_proxy." in filename.lower():
+            print(f"{videopath} - Correct filename")
+
+            # move the video to its correct directory
+            copy_file_safe(videopath, os.path.join(output_video_dir, f"Scene {scene}/{'Proxy' if proxy else '4K'}"))
+            
+            # find the corresponding audio file from the input audio directory
+            audio_filepath = search_dir(input_audio_dir, f"{int(scene)}{chr(int(shot) + ord('a') - 1).upper()}_T{int(take)}.wav")
+            # rename and move the corresponding audio file to the correct directory
+            if audio_filepath is not None:
+                copy_file_safe(audio_filepath, os.path.join(output_video_dir, f"Scene {scene}/Audio"), f"S{scene}_S{shot}_T{take}{os.path.splitext(audio_filepath)[1]}")
+
+        else:
+            # if not, move the video file to the "Manual Review Required" directory
+            print(f"{videopath} - Incorrect filename")
+            
+            copy_file_safe(videopath, os.path.join(output_video_dir, "Manual Review Required"))
+            
+            
+num_conversions = {
+    'one': 1,
+    'two': 2,
+    'three': 3,
+    'four': 4,
+    'five': 5,
+    'six': 6,
+    'seven': 7,
+    'eight': 8,
+    'nine': 9,
+    'zero': 0
+}
+
+# check if the correct arguments were input
+if len(sys.argv) < 4:
+    print(f"Invalid syntax! Correct syntax is: \n{sys.executable} {os.path.abspath(__file__)} \"replace/with/path/to/folder/with/videos/\" \"replace/with/path/to/folder/with/audio/\" \"replace/with/path/to/output/folder/\"")
+    exit()
+
+# define the input video, input audio, and output directory variables from the arguments
+input_video_dir = sys.argv[1]
+input_audio_dir = sys.argv[2]
+output_video_dir = sys.argv[3]
+
+# check if both of those paths exist and if they don't, error
+for path in sys.argv[1:4]:
+    if not os.path.exists(path):
+        print(f"\nThe folder \"{path}\" does not exist!")
+        exit()
+
+# Instantiate the clapboard and clapboard text models
+clapboard_model = YOLO("./yolo_v8/weights_final/clapboard_best.pt")
+clapboard_text_model = YOLO("./yolo_v8/weights_final/clapboard_text_best.pt")
 
 main()
