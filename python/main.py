@@ -4,12 +4,13 @@ import pkg_resources
 
 required_packages = {'numpy', 'opencv-python', 'ultralytics'}
 installed = {pkg.key for pkg in pkg_resources.working_set}
-missing = required - installed
+missing = required_packages - installed
 
 if missing:
     python = sys.executable
     subprocess.check_call([python, '-m', 'pip', 'install', *missing], stdout=subprocess.DEVNULL)
 
+import os
 import math
 import fnmatch
 import shutil
@@ -137,7 +138,7 @@ def copy_file_safe(filepath, dest_dir, filename=None, attempt=1):
         shutil.copy2(filepath, dest_filepath)
     except Exception as e:
         if attempt <= 5:
-            att += 1;
+            attempt += 1;
             copy_file_safe(filepath, dest_dir, filename, attempt)
         
 
@@ -169,7 +170,7 @@ def main():
             detected = detect_best_clapboard_info(frames)
         
         # if it still couldnt find a clapboard, set all the below variables to none 
-        scene, cam, shot, take = detected['results'] if detected else [None, None, None, None]
+        scene, cam, shot, take = detected['results'] if detected else [-1, -1, -1, -1]
 
         print(f"{videopath} - Found Clapboard Data:")
         print("    Scene: " + str(scene))
