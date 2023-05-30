@@ -199,7 +199,7 @@ def main():
             
             copy_file_safe(videopath, os.path.join(output_video_dir, "Manual Review Required"))
             
-            
+
 num_conversions = {
     'one': 1,
     'two': 2,
@@ -230,7 +230,7 @@ for path in sys.argv[1:4]:
         exit()
 
 # Instantiate the clapboard and clapboard text models
-clapboard_model = YOLO("./yolo_v8/weights_final/clapboard_best.pt")
-clapboard_text_model = YOLO("./yolo_v8/weights_final/clapboard_text_best.pt")
+clapboard_model = YOLO("./weights_final/clapboard_best.pt")
+clapboard_text_model = YOLO("./weights_final/clapboard_text_best.pt")
 
 main()
