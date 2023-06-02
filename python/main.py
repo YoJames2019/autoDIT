@@ -246,19 +246,19 @@ def main():
             print(f"{videopath} - Correct filename")
 
             # move the video to its correct directory
-            copy_file_safe(videopath, os.path.join(output_video_dir, f"Scene {scene}/{'Proxy' if proxy else '4K'}"))
+            copy_file_safe(videopath, os.path.join(output_dir, f"Scene {scene}/{'Proxy' if proxy else '4K'}"))
             
             # find the corresponding audio file from the input audio directory
             audio_filepath = search_dir(input_audio_dir, f"{int(scene)}{chr(int(shot) + ord('a') - 1).upper()}_T{int(take)}.wav")
             # rename and move the corresponding audio file to the correct directory
             if audio_filepath is not None:
-                copy_file_safe(audio_filepath, os.path.join(output_video_dir, f"Scene {scene}/Audio"), f"S{scene}_S{shot}_T{take}{os.path.splitext(audio_filepath)[1]}")
+                copy_file_safe(audio_filepath, os.path.join(output_dir, f"Scene {scene}/Audio"), f"S{scene}_S{shot}_T{take}{os.path.splitext(audio_filepath)[1]}")
 
         else:
             # if not, move the video file to the "Manual Review Required" directory
             print(f"{videopath} - Incorrect filename")
             
-            copy_file_safe(videopath, os.path.join(output_video_dir, "Manual Review Required"))
+            copy_file_safe(videopath, os.path.join(output_dir, "Manual Review Required"))
     
 
     # convert the audio file names (ex. 24B_T1.wav) to the correct format (ex. S024_S002_T001.wav)
@@ -281,7 +281,7 @@ def main():
         # if not, move the audio file to the "Manual Review Required" directory and skip to the next audio file
         if not matched or len(matched.groups()) != 3:
             print(f"{audio_filepath} - Incorrect audio format, cannot convert")
-            copy_file_safe(audio_filepath, os.path.join(output_video_dir, "Manual Review Required"))
+            copy_file_safe(audio_filepath, os.path.join(output_dir, "Manual Review Required"))
             continue
         
         # if it is, rename and move the audio file to the correct directory
@@ -299,7 +299,7 @@ def main():
         new_filename = f"S{cnv_scene}_S{cnv_shot}_T{cnv_take}{os.path.splitext(filename)[1]}"
         
         print(f"{audio_filepath} - Correct format, renaming to {new_filename}")
-        copy_file_safe(audio_filepath, os.path.join(output_video_dir, f"Scene {cnv_scene}/Audio"), new_filename)
+        copy_file_safe(audio_filepath, os.path.join(output_dir, f"Scene {cnv_scene}/Audio"), new_filename)
             
 
 num_conversions = {
@@ -322,15 +322,25 @@ if len(sys.argv) < 4:
     print(f"Invalid syntax! Correct syntax is: \n{sys.executable} {os.path.abspath(__file__)} \"replace/with/path/to/folder/with/videos/\" \"replace/with/path/to/folder/with/audio/\" \"replace/with/path/to/output/folder/\"")
     exit()
 
-# define the input video, input audio, and output directory variables from the arguments
+# define the input video and input audio from the arguments
 input_video_dir = sys.argv[1]
 input_audio_dir = sys.argv[2]
-output_video_dir = sys.argv[3]
 
 # check if both of those paths exist and if they don't, error
-for path in sys.argv[1:4]:
+for path in sys.argv[1:3]:
     if not os.path.exists(path):
         print(f"\nThe folder \"{path}\" does not exist!")
+        exit()
+
+# define the output video directory from the arguments
+output_dir = sys.argv[3]
+
+# check if the output directory exists and if it doesn't, create it
+if not os.path.exists(output_dir):
+    try:
+        os.makedirs(output_dir)
+    except:
+        print(f"\nCould not create the output directory \"{output_dir}\"!")
         exit()
 
 # Instantiate the clapboard and clapboard text models
