@@ -2,7 +2,7 @@ import sys
 import subprocess
 import pkg_resources
 
-required_packages = {'numpy', 'opencv-python', 'ultralytics', 'pytorch'}
+required_packages = {'numpy', 'opencv-python', 'ultralytics', 'torch'}
 installed = {pkg.key for pkg in pkg_resources.working_set}
 missing = required_packages - installed
 
@@ -10,28 +10,29 @@ if missing:
     python = sys.executable
     subprocess.check_call([python, '-m', 'pip', 'install', *missing], stdout=subprocess.DEVNULL)
 
-import torch
+import re
 import os
 import math
 import fnmatch
 import shutil
 import numpy as np
 import cv2
+import torch
 from ultralytics import YOLO
         
-def find_video_files(directory, extensions=['*.mp4', '*.mov']):
-    video_files = []
+def find_files(directory, extensions=['*.mp4', '*.mov']):
+    files = []
     if os.path.exists(directory):
         for root, dirnames, filenames in os.walk(directory):
             for extension in extensions:
                 for filename in fnmatch.filter(filenames, extension):
-                    video_files.append(os.path.join(root, filename))
+                    files.append(os.path.join(root, filename))
 
     else:
         print(f"The directory '{directory}' does not exist.")
         print(f"Current working directory: {os.getcwd()}")
         print(f"Absolute path: {os.path.abspath(directory)}")
-    return video_files
+    return files
 
 def search_dir(start_dir, target_file):
     for dirpath, dirnames, filenames in os.walk(start_dir):
@@ -39,6 +40,71 @@ def search_dir(start_dir, target_file):
             if filename == target_file:
                 return os.path.join(dirpath, filename)
     return None
+
+def extract_frames(videopath, sec, width, height, tail=False):
+    # Get the duration of the video
+    print(f"{videopath} - Checking video duration")
+    duration_cmd = ['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', videopath]
+    duration = float(subprocess.check_output(duration_cmd))
+
+    # Calculate the start and end times
+    if tail:
+        start_time = max(duration - sec, 0)
+        end_time = duration
+    else:
+        start_time = 0
+        end_time = min(sec, duration)
+    
+    # Extract frames from the video
+    print(f"{videopath} - Extracting frames")
+    extract_cmd = ['ffmpeg', '-i', videopath, '-ss', str(start_time), '-t', str(end_time - start_time), '-vf', f'scale=w={width}:h={height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2' + (',vflip,hflip' if tail else ''), '-q:v', '2', '-f', 'image2pipe', '-pix_fmt', 'rgb24', '-vcodec', 'rawvideo', '-']
+    result = subprocess.run(extract_cmd, stderr=subprocess.DEVNULL, stdout=subprocess.PIPE)
+    frames_raw = result.stdout
+    
+    print(f"{videopath} - Converting buffer to numpy array")
+    # Convert the frame buffer to a numpy array
+    frames = np.frombuffer(frames_raw, dtype=np.uint8)
+    frames = frames.reshape((-1, height, width, 3))
+    
+    return frames
+
+
+def resize_image(img, size=(28,28)):
+    # Get the height and width of the image
+    h, w = img.shape[:2]
+
+    # Get the number of channels of the image, default to 1 if it's a grayscale image
+    c = img.shape[2] if len(img.shape)>2 else 1
+
+    # If the image is already square, just resize it
+    if h == w: 
+        return cv2.resize(img, size, cv2.INTER_AREA)
+
+    # Find the longer side of the image
+    dif = h if h > w else w
+
+    # Decide the interpolation method based on the size of the longer side
+    interpolation = cv2.INTER_AREA if dif > (size[0]+size[1])//2 else cv2.INTER_CUBIC
+
+    # Calculate the position to place the original image on the new square image
+    x_pos = (dif - w)//2
+    y_pos = (dif - h)//2
+
+    # If the image is grayscale
+    if len(img.shape) == 2:
+        # Create a square image filled with zeros
+        mask = np.zeros((dif, dif), dtype=img.dtype)
+        # Place the original image in the center of the square image
+        mask[y_pos:y_pos+h, x_pos:x_pos+w] = img[:h, :w]
+    else: # If the image is colored
+        # Create a square image filled with zeros with the same number of channels as the original image
+        mask = np.zeros((dif, dif, c), dtype=img.dtype)
+        # Place the original image in the center of the square image
+        mask[y_pos:y_pos+h, x_pos:x_pos+w, :] = img[:h, :w, :]
+
+    # Resize the square image to the desired size and return it
+    return cv2.resize(mask, size, interpolation) # ignore the warning, it works
+
 
 def detect_best_clapboard_info(frames):
     # for each frame of that video, pass that frame to the clapboardrecognition class which will then:
@@ -50,13 +116,18 @@ def detect_best_clapboard_info(frames):
             clapboard_results = clapboard_model.predict(frame, conf=0.75, verbose=False)
             clapboard_coords = clapboard_results[0]
 
-            # if there is a clapboard, it will crop the image to JUST the clapboard
+            # if there is a clapboard
             if len(clapboard_coords.boxes) > 0:
+
+                # crop the image to JUST the clapboard to eliminate any other text in the image
                 cx, cy, cw, ch = clapboard_coords.boxes[0].xywh.cpu().numpy()[0].astype(int)
                 ncw = math.ceil(cw/2)
                 nch = math.ceil(ch/2)
 
                 frame = frame[max(0, cy-nch):max(0, cy+nch), max(0, cx-ncw):max(0, cx+ncw)]
+
+                # resize the image to a fixed size to make it easier to recognize the text
+                frame = resize_image(frame, (800, 800))
 
                 # then pass the cropped image to the function to recognize the text on the clapboard
                 text_results = clapboard_text_model.predict(frame, conf=0.80, verbose=False)
@@ -99,6 +170,8 @@ def detect_best_clapboard_info(frames):
                             group = []
                             continue;
 
+                    cv2.imshow("Detected", result.plot())
+                    cv2.waitKey(1)
                     if(len(confs) > 0 and len(groups) == 4 and len(groups[-1]) == 3):
                         detected.append({'frame': frame, 'frame_plotted': result.plot(), 'conf': round(sum(confs)/len(confs), 4), 'boxes': groups, 'results': [str(r[0][4])+str(r[1][4])+str(r[2][4]) for r in groups]})
 
@@ -107,32 +180,6 @@ def detect_best_clapboard_info(frames):
         else:
             return None
 
-def extract_frames(videopath, sec, width, height, tail=False):
-    # Get the duration of the video
-    print(f"{videopath} - Checking video duration")
-    duration_cmd = ['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', videopath]
-    duration = float(subprocess.check_output(duration_cmd))
-
-    # Calculate the start and end times
-    if tail:
-        start_time = max(duration - sec, 0)
-        end_time = duration
-    else:
-        start_time = 0
-        end_time = min(sec, duration)
-    
-    # Extract frames from the video
-    print(f"{videopath} - Extracting frames")
-    extract_cmd = ['ffmpeg', '-i', videopath, '-ss', str(start_time), '-t', str(end_time - start_time), '-vf', f'scale=w={width}:h={height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2' + (',vflip,hflip' if tail else ''), '-q:v', '2', '-f', 'image2pipe', '-pix_fmt', 'rgb24', '-vcodec', 'rawvideo', '-']
-    result = subprocess.run(extract_cmd, stderr=subprocess.DEVNULL, stdout=subprocess.PIPE)
-    frames_raw = result.stdout
-    
-    print(f"{videopath} - Converting buffer to numpy array")
-    # Convert the frame buffer to a numpy array
-    frames = np.frombuffer(frames_raw, dtype=np.uint8)
-    frames = frames.reshape((-1, height, width, 3))
-    
-    return frames
 
 def copy_file_safe(filepath, dest_dir, filename=None, attempt=1):
     if filename is None:
@@ -157,11 +204,15 @@ def calculate_distance(point1, point2):
 
 
 def main():
+
+    print(f"Looking for videos in {input_video_dir}")
     # loop through all videos in a certain directory and all subdirectories
-    videopaths = find_video_files(input_video_dir)
+    videopaths = find_files(input_video_dir, extensions=["*.mp4", "*.mov"])
+
+    print(f"Found {len(videopaths)} video files")
     # pass each video to a parser that will get the first 10 seconds (240 frames) of the video (and if tail=True it will get the last 240 frames of the video)
     for videopath in videopaths:
-        print(f"\n{videopath} - ")
+        print(f"\nProcessing {videopath}:")
         filename = os.path.basename(videopath)
         proxy = "_proxy" in filename
 
@@ -180,6 +231,9 @@ def main():
         # if it still couldnt find a clapboard, set all the below variables to none 
         scene, cam, shot, take = detected['results'] if detected else [-1, -1, -1, -1]
 
+        cv2.imshow("Detected", detected['frame_plotted'] if detected else frames[-1])
+        cv2.waitKey(1)
+        
         print(f"{videopath} - Found Clapboard Data:")
         print("    Scene: " + str(scene))
         print("    Camera: " + str(cam))
@@ -205,6 +259,47 @@ def main():
             print(f"{videopath} - Incorrect filename")
             
             copy_file_safe(videopath, os.path.join(output_video_dir, "Manual Review Required"))
+    
+
+    # convert the audio file names (ex. 24B_T1.wav) to the correct format (ex. S024_S002_T001.wav)
+
+    print(f"\nLooking for audio files in {input_audio_dir}")
+    # find all wav files in the input audio directory
+    audio_filepaths = find_files(input_audio_dir, extensions=["*.wav"])
+    print(f"Found {len(audio_filepaths)} audio files")
+
+    # loop through all the audio files
+    for audio_filepath in audio_filepaths:
+        
+        print(f"\nProcessing {audio_filepath}:")
+        # get the filename of the audio file
+        filename = os.path.basename(audio_filepath)
+
+        # check if the filename is in the correct format
+        matched = re.match(r"([\d]+)([A-Z]+)_T([\d]+)", filename)
+        
+        # if not, move the audio file to the "Manual Review Required" directory and skip to the next audio file
+        if not matched or len(matched.groups()) != 3:
+            print(f"{audio_filepath} - Incorrect audio format, cannot convert")
+            copy_file_safe(audio_filepath, os.path.join(output_video_dir, "Manual Review Required"))
+            continue
+        
+        # if it is, rename and move the audio file to the correct directory
+        scene, shot, take = matched.groups()
+
+        # convert the scene, shot, and take to the correct format
+        cnv_scene = scene.zfill(3)
+        cnv_shot = str(ord(shot.lower()) - ord('a') + 1).zfill(3)
+        cnv_take = take.zfill(3)
+
+        print(f"{audio_filepath} - Found Scene Data: ")
+        print(f"    Scene: {scene} -> {cnv_scene}")
+        print(f"    Shot: {shot} -> {cnv_shot}")
+        print(f"    Take: {take} -> {cnv_take}")
+        new_filename = f"S{cnv_scene}_S{cnv_shot}_T{cnv_take}{os.path.splitext(filename)[1]}"
+        
+        print(f"{audio_filepath} - Correct format, renaming to {new_filename}")
+        copy_file_safe(audio_filepath, os.path.join(output_video_dir, f"Scene {cnv_scene}/Audio"), new_filename)
             
 
 num_conversions = {
