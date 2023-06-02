@@ -176,6 +176,7 @@ def detect_best_clapboard_info(frames):
                         detected.append({'frame': frame, 'frame_plotted': result.plot(), 'conf': round(sum(confs)/len(confs), 4), 'boxes': groups, 'results': [str(r[0][4])+str(r[1][4])+str(r[2][4]) for r in groups]})
 
         if(len(detected) > 0):
+            # TODO: change this so that it counts how many results are the same and then returns the one with the most matches
             return max(detected, key=lambda x: x['conf'])
         else:
             return None
