@@ -10,6 +10,7 @@ if missing:
     python = sys.executable
     subprocess.check_call([python, '-m', 'pip', 'install', *missing], stdout=subprocess.DEVNULL)
 
+import torch
 import os
 import math
 import fnmatch
@@ -68,23 +69,29 @@ def detect_best_clapboard_info(frames):
                     confs = [c for c in result.boxes.conf.cpu().numpy()]
                     
                     #sort the matches by x distance from each other
-                    matches_sorted = sorted(matches, key=lambda x: calculate_distance((x[0] + x[2]/2, x[1] + x[3]/2), (0, 0)))
+                    matches = sorted(matches, key=lambda x: calculate_distance((x[0] + x[2]/2, x[1] + x[3]/2), (0, 0)))
 
-                    #replace the class ids with the actual class names
-                    matches_sorted = [sub[:4] + [num_conversions[clapboard_text_model.names[int(sub[5])]]] for sub in matches_sorted] # type: ignore
+                    #replace the class ids with the actual class names and filter out any detections of text that is not a number
+                    matches_filtered = []
+                    for sub in matches:
+                        class_id = int(sub[5])
+                        class_name_text = clapboard_text_model.names[class_id] # type: ignore
+                        
+                        if class_name_text in num_conversions:
+                            matches_filtered.append(sub[:4] + [num_conversions[class_name_text]])
 
                     group = []
                     groups = []
                     i = 0;
-                    while len(matches_sorted) > 0 and i < len(matches_sorted):
-                        match = matches_sorted[i]
+                    while len(matches_filtered) > 0 and i < len(matches_filtered):
+                        match = matches_filtered[i]
 
                         if(len(group) > 0 and abs(match[1] - group[-1][1]) > 5):
                             i += 1;
                             continue;
                         
                         group.append(match)
-                        matches_sorted.pop(i)
+                        matches_filtered.pop(i)
 
                         if(len(group) == 3):
                             i = 0;
@@ -212,6 +219,8 @@ num_conversions = {
     'nine': 9,
     'zero': 0
 }
+
+print(f"Using GPU: {torch.cuda.is_available()}")
 
 # check if the correct arguments were input
 if len(sys.argv) < 4:
