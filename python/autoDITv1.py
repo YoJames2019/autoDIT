@@ -2,7 +2,7 @@ import sys
 import subprocess
 import pkg_resources
 
-required_packages = {'numpy', 'opencv-python', 'ultralytics', 'torch'}
+required_packages = {'numpy', 'opencv-python', 'ultralytics', 'torch', 'pyqt6'}
 installed = {pkg.key for pkg in pkg_resources.working_set}
 missing = required_packages - installed
 
