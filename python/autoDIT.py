@@ -19,8 +19,17 @@ class autoDITWorker(QThread):
     def __init__(self, input_video_dir, input_audio_dir, output_dir, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.clapboard_model = YOLO("./weights_final/clapboard_best.pt")
-        self.clapboard_text_model = YOLO("./weights_final/clapboard_text_best.pt")
+        self.src_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+
+        self.clapboard_model = YOLO(os.path.join(self.src_dir, "weights_final/clapboard_best.pt"))
+        self.clapboard_text_model = YOLO(os.path.join(self.src_dir, "weights_final/clapboard_text_best.pt"))
+
+        self.dependencies = {
+            'ffmpeg': os.path.join(self.src_dir, 'dependencies/ffmpeg/bin/ffmpeg.exe'),
+            'ffprobe': os.path.join(self.src_dir, 'dependencies/ffmpeg/bin/ffprobe.exe'),
+            'ffplay': os.path.join(self.src_dir, 'dependencies/ffmpeg/bin/ffplay.exe')
+        }
+
         self.num_conversions = {
             'one': 1,
             'two': 2,
@@ -38,11 +47,11 @@ class autoDITWorker(QThread):
         self.audio_dir = input_audio_dir
         self.output_dir = output_dir
 
-        self.log_signal.emit(f"Using GPU: {torch.cuda.is_available()}", 0)
 
 
     def run(self):
 
+        self.log_signal.emit(f"Using GPU: {torch.cuda.is_available()}", 0)
         self.log_signal.emit(f"Looking for videos in {self.video_dir}", 0)
         # loop through all videos in a certain directory and all subdirectories
         videopaths = self.find_files(self.video_dir, extensions=["*.mp4", "*.mov"])
@@ -61,7 +70,7 @@ class autoDITWorker(QThread):
             filename = os.path.basename(videopath)
             proxy = "_proxy" in filename
 
-            frames = self.extract_frames(videopath, 10, 800, 800)
+            frames = self.extract_frames(videopath, 10, 1600, 1600)
             
             self.log_signal.emit("Checking for clapboard", 1)
             detected = self.detect_best_clapboard_info(frames)
@@ -70,7 +79,7 @@ class autoDITWorker(QThread):
             if detected is None:
                 self.log_signal.emit("No clapboard detected, checking for tailslate", 1)
                 # it will pass the video back to the parser with tail=True
-                frames = self.extract_frames(videopath, 10, 800, 800, True)
+                frames = self.extract_frames(videopath, 10, 1600, 1600, True)
                 detected = self.detect_best_clapboard_info(frames)
             
             # if it still couldnt find a clapboard, set all the below variables to none 
@@ -167,7 +176,7 @@ class autoDITWorker(QThread):
     def extract_frames(self, videopath, sec, width, height, tail=False):
         # Get the duration of the video
         self.log_signal.emit("Checking video duration", 1)
-        duration_cmd = ['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', videopath]
+        duration_cmd = [self.dependencies['ffprobe'], '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', videopath]
         duration = float(subprocess.check_output(duration_cmd))
 
         # Calculate the start and end times
@@ -180,7 +189,7 @@ class autoDITWorker(QThread):
         
         # Extract frames from the video
         self.log_signal.emit("Extracting frames", 1)
-        extract_cmd = ['ffmpeg', '-i', videopath, '-ss', str(start_time), '-t', str(end_time - start_time), '-vf', f'scale=w={width}:h={height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2' + (',vflip,hflip' if tail else ''), '-q:v', '2', '-f', 'image2pipe', '-pix_fmt', 'rgb24', '-vcodec', 'rawvideo', '-']
+        extract_cmd = [self.dependencies['ffmpeg'], '-i', videopath, '-ss', str(start_time), '-t', str(end_time - start_time), '-vf', f'scale=w={width}:h={height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2' + (',vflip,hflip' if tail else ''), '-q:v', '2', '-f', 'image2pipe', '-pix_fmt', 'rgb24', '-vcodec', 'rawvideo', '-']
         result = subprocess.run(extract_cmd, stderr=subprocess.DEVNULL, stdout=subprocess.PIPE)
         frames_raw = result.stdout
         
@@ -296,7 +305,7 @@ class autoDITWorker(QThread):
 
                         self.image_preview_signal.emit(result.plot())
                         if(len(confs) > 0 and len(groups) == 4 and len(groups[-1]) == 3):
-                            raw_results_arr.append({'frame': frame, 'frame_plotted': result.plot(), 'conf': round(sum(confs)/len(confs), 4), 'boxes': groups, 'clapboard_info': [str(r[0][4])+str(r[1][4])+str(r[2][4]) for r in groups]})
+                            raw_results_arr.append({'frame_plotted': result.plot(), 'conf': round(sum(confs)/len(confs), 4), 'clapboard_info': [str(r[0][4])+str(r[1][4])+str(r[2][4]) for r in groups]})
 
             if(len(raw_results_arr) > 0):
                 # TODO: change this so that it counts how many results are the same and then returns the one with the most matches
