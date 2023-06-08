@@ -7,8 +7,10 @@ import shutil
 import numpy as np
 import cv2
 import torch
+import gc
 from ultralytics import YOLO
 from PyQt6.QtCore import pyqtSignal, QThread
+
 class autoDITWorker(QThread):
     progress = pyqtSignal(int)
     image_preview_signal = pyqtSignal(object)
@@ -42,6 +44,7 @@ class autoDITWorker(QThread):
             'nine': 9,
             'zero': 0
         }
+
         # define the input video and input audio from the gui part
         self.video_dir = input_video_dir
         self.audio_dir = input_audio_dir
@@ -70,7 +73,7 @@ class autoDITWorker(QThread):
             filename = os.path.basename(videopath)
             proxy = "_proxy" in filename
 
-            frames = self.extract_frames(videopath, 10, 1600, 1600)
+            frames = self.extract_frames(videopath, 10, 2400, 2400)
             
             self.log_signal.emit("Checking for clapboard", 1)
             detected = self.detect_best_clapboard_info(frames)
@@ -79,14 +82,15 @@ class autoDITWorker(QThread):
             if detected is None:
                 self.log_signal.emit("No clapboard detected, checking for tailslate", 1)
                 # it will pass the video back to the parser with tail=True
-                frames = self.extract_frames(videopath, 10, 1600, 1600, True)
+                frames = self.extract_frames(videopath, 10, 2400, 2400, True)
                 detected = self.detect_best_clapboard_info(frames)
             
             # if it still couldnt find a clapboard, set all the below variables to none 
             scene, cam, shot, take = detected['clapboard_info'] if detected else [-1, -1, -1, -1]
 
-            self.image_preview_signal.emit(detected['frame'] if detected else frames[-1])
 
+            self.image_preview_signal.emit(detected['frame'] if detected else frames[-1])
+            
             if take == -1:
                 self.log_signal.emit("No clapboard detected", 1)
             else:
@@ -239,7 +243,7 @@ class autoDITWorker(QThread):
 
     def detect_best_clapboard_info(self, frames):
         # for each frame of that video, pass that frame to the clapboardrecognition class which will then:
-            raw_results_arr = []
+            clapboard_results_dict = {}
             for i, frame in enumerate(frames):
                 frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 if i == 0:
@@ -304,24 +308,26 @@ class autoDITWorker(QThread):
                                 continue;
 
                         self.image_preview_signal.emit(result.plot())
+
                         if(len(confs) > 0 and len(groups) == 4 and len(groups[-1]) == 3):
-                            raw_results_arr.append({'frame_plotted': result.plot(), 'conf': round(sum(confs)/len(confs), 4), 'clapboard_info': [str(r[0][4])+str(r[1][4])+str(r[2][4]) for r in groups]})
+                            scene, cam, shot, take = [str(r[0][4])+str(r[1][4])+str(r[2][4]) for r in groups]
 
-            if(len(raw_results_arr) > 0):
-                # TODO: change this so that it counts how many results are the same and then returns the one with the most matches
-                clapboard_results_dict = {}
-                for res in raw_results_arr:
-                    scene, cam, shot, take = res['clapboard_info'] if res else [-1, -1, -1, -1]
+                            formatted_info = f"s{scene}_s{shot}_t{take}"
+                            frame_conf = round(sum(confs)/len(confs), 4)
 
-                    formatted_info = f"s{scene}_s{shot}_t{take}"
+                            if formatted_info not in clapboard_results_dict:
+                                clapboard_results_dict[formatted_info] = {'count': 0, 'formatted_results': formatted_info, 'frame': result.plot(), 'conf': frame_conf, 'clapboard_info': [str(r[0][4])+str(r[1][4])+str(r[2][4]) for r in groups]}
 
+                            if frame_conf > clapboard_results_dict[formatted_info]['conf']:
+                                clapboard_results_dict[formatted_info]['frame'] = result.plot()
+                                clapboard_results_dict[formatted_info]['conf'] = frame_conf
 
-                    if formatted_info not in clapboard_results_dict:
-                        clapboard_results_dict[formatted_info] = {'frame': res['frame_plotted'], 'formatted_results': formatted_info, 'clapboard_info': res['clapboard_info'], 'conf': res['conf'], 'count': 1}
+                            clapboard_results_dict[formatted_info]['count'] += 1
 
-                    clapboard_results_dict[formatted_info]['count'] += 1
-                
-                return max(clapboard_results_dict.values(), key=lambda r: r['count'])
+            
+            if(len(clapboard_results_dict) > 0):
+                best_result = max(clapboard_results_dict.values(), key=lambda r: r['count'])
+                return best_result
             else:
                 return None
             
