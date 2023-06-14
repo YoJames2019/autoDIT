@@ -10,6 +10,7 @@ if missing:
     python = sys.executable
     subprocess.check_call([python, '-m', 'pip', 'install', *missing], stdout=subprocess.DEVNULL)
 
+from datetime import datetime
 import cv2
 import os
 from PyQt6.QtWidgets import (
@@ -151,10 +152,10 @@ class MainWindow(QWidget):
         self.DITThread.start()
         
 
-    def add_log(self, text, indent=0):
-        self.log_box.append(f"{'       ' * indent}{text}")
+    def add_log(self, text, indent=0, new_line=False):
+        new_line = "\n" if new_line else ""
+        self.log_box.append(f"{new_line}{datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-4]} - {'       ' * indent}{text}")
         self.update_ui()
-
 
 
     def set_image_preview(self, image):

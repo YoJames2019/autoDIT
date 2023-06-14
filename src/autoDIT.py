@@ -49,34 +49,34 @@ class autoDITWorker(QThread):
 
     def run(self):
 
-        self.log_signal.emit(f"Using GPU: {torch.cuda.is_available()}", 0)
+        self.log_signal.emit(f"Using GPU: {torch.cuda.is_available()}", 0, False)
         
-        self.log_signal.emit(f"Looking for videos in {self.video_dir}", 0)
+        self.log_signal.emit(f"Looking for videos in {self.video_dir}", 0, False)
         # loop through all videos in a certain directory and all subdirectories
         videopaths = self.find_files(self.video_dir, extensions=["*.mp4", "*.mov"])
 
-        self.log_signal.emit(f"Found {len(videopaths)} video files", 0)
+        self.log_signal.emit(f"Found {len(videopaths)} video files", 0, False)
 
-        self.log_signal.emit(f"\nLooking for audio files in {self.audio_dir}", 0)
+        self.log_signal.emit(f"Looking for audio files in {self.audio_dir}", 0, True)
         # find all wav files in the input audio directory
         audio_filepaths = self.find_files(self.audio_dir, extensions=["*.wav"])
-        self.log_signal.emit(f"Found {len(audio_filepaths)} audio files", 0)
+        self.log_signal.emit(f"Found {len(audio_filepaths)} audio files", 0, False)
 
         self.progress_bar_range_signal.emit(0, len(videopaths)+len(audio_filepaths))
         # pass each video to a parser that will get the first 10 seconds (240 frames) of the video (and if tail=True it will get the last 240 frames of the video)
         for videopath in videopaths:
-            self.log_signal.emit(f"\nProcessing {videopath}:", 0)
+            self.log_signal.emit(f"Processing {videopath}:", 0, True)
             filename = os.path.basename(videopath)
             proxy = "_proxy" in filename
 
             frames = self.extract_frames(videopath, 10, 1600, 1600)
             
-            self.log_signal.emit("Checking for clapboard", 1)
+            self.log_signal.emit("Checking for clapboard", 1, False)
             detected = self.detect_best_clapboard_info(frames)
 
             # if it cannot find a clapboard, find text, and validate the text:
             if detected is None:
-                self.log_signal.emit("No clapboard detected, checking for tailslate", 1)
+                self.log_signal.emit("No clapboard detected, checking for tailslate", 1, False)
                 # it will pass the video back to the parser with tail=True
                 frames = self.extract_frames(videopath, 10, 1600, 1600, True)
                 detected = self.detect_best_clapboard_info(frames)
@@ -87,13 +87,13 @@ class autoDITWorker(QThread):
             self.image_preview_signal.emit(detected['frame'] if detected else frames[-1])
 
             if take == -1:
-                self.log_signal.emit("No clapboard detected", 1)
+                self.log_signal.emit("No clapboard detected", 1, False)
             else:
-                self.log_signal.emit("Found Clapboard Data:", 1)
-                self.log_signal.emit(f"Scene: {str(scene)}", 2)
-                self.log_signal.emit(f"Camera: {str(cam)}", 2)
-                self.log_signal.emit(f"Shot: {str(shot)}", 2)
-                self.log_signal.emit(f"Take: {str(take)}", 2)
+                self.log_signal.emit("Found Clapboard Data:", 1, False)
+                self.log_signal.emit(f"Scene: {str(scene)}", 2, False)
+                self.log_signal.emit(f"Camera: {str(cam)}", 2, False)
+                self.log_signal.emit(f"Shot: {str(shot)}", 2, False)
+                self.log_signal.emit(f"Take: {str(take)}", 2, False)
 
             # if it found all this correctly, it will then check
             # if the video file name is the same as predicted:
@@ -101,12 +101,12 @@ class autoDITWorker(QThread):
             if detected is not None and (f"{detected['formatted_results']}." in filename.lower() or f"{detected['formatted_results']}_proxy." in filename.lower()):
                 # if it is, it will move the video file to the correct directory
                 new_filepath = os.path.join(self.output_dir, f"Scene {scene}\{'Proxy' if proxy else '4K'}")
-                self.log_signal.emit(f"Correct filename", 1)
+                self.log_signal.emit(f"Correct filename", 1, False)
             else:
                 # if not, move the video file to the "Manual Review Required" directory
-                self.log_signal.emit("Incorrect filename", 1)
+                self.log_signal.emit("Incorrect filename", 1, False)
 
-            self.log_signal.emit(f"Moving file to {new_filepath}", 1)
+            self.log_signal.emit(f"Moving file to {new_filepath}", 1, False)
             self.copy_file_safe(videopath, new_filepath)
             self.progress_bar_signal.emit(1)
 
@@ -115,7 +115,7 @@ class autoDITWorker(QThread):
         # loop through all the audio files
         for audio_filepath in audio_filepaths:
             
-            self.log_signal.emit(f"\nProcessing {audio_filepath}:", 0)
+            self.log_signal.emit(f"Processing {audio_filepath}:", 0, True)
             # get the filename of the audio file
             filename = os.path.basename(audio_filepath)
 
@@ -124,10 +124,10 @@ class autoDITWorker(QThread):
             
             # if not, move the audio file to the "Manual Review Required" directory and skip to the next audio file
             if not matched or len(matched.groups()) != 3:
-                self.log_signal.emit("Incorrect audio format, cannot convert", 1)
+                self.log_signal.emit("Incorrect audio format, cannot convert", 1, False)
 
                 new_filename = os.path.join(self.output_dir, "Manual Review Required")
-                self.log_signal.emit(f"Moving file to {new_filename}", 1)
+                self.log_signal.emit(f"Moving file to {new_filename}", 1, False)
 
                 self.copy_file_safe(audio_filepath, new_filename)
                 self.progress_bar_signal.emit(1)
@@ -141,17 +141,17 @@ class autoDITWorker(QThread):
             cnv_shot = "RoomTone" if shot.lower() == "rt" else str(ord(shot.lower()) - ord('a') + 1).zfill(3)
             cnv_take = take.zfill(3)
 
-            self.log_signal.emit("Found Scene Data: ", 1)
-            self.log_signal.emit(f"Scene: {scene} -> {cnv_scene}", 2)
-            self.log_signal.emit(f"Shot: {shot} -> {cnv_shot}", 2)
-            self.log_signal.emit(f"Take: {take} -> {cnv_take}", 2)
+            self.log_signal.emit("Found Scene Data: ", 1, False)
+            self.log_signal.emit(f"Scene: {scene} -> {cnv_scene}", 2, False)
+            self.log_signal.emit(f"Shot: {shot} -> {cnv_shot}", 2, False)
+            self.log_signal.emit(f"Take: {take} -> {cnv_take}", 2, False)
             new_filename = f"S{cnv_scene}_{'S' if cnv_shot.isdigit() else ''}{cnv_shot}_T{cnv_take}{os.path.splitext(filename)[1]}"
             
-            self.log_signal.emit(f"Correct format, renaming to {new_filename}", 1)
+            self.log_signal.emit(f"Correct format, renaming to {new_filename}", 1, False)
 
             new_filepath = os.path.join(self.output_dir, f'Scene {cnv_scene}\Audio')
 
-            self.log_signal.emit(f"Moving file to {new_filename}", 1)
+            self.log_signal.emit(f"Moving file to {new_filename}", 1, False)
             self.copy_file_safe(audio_filepath, os.path.join(self.output_dir, f"Scene {cnv_scene}\Audio"), new_filename)
 
             self.progress_bar_signal.emit(1)
@@ -168,9 +168,9 @@ class autoDITWorker(QThread):
                     for filename in fnmatch.filter(filenames, extension):
                         files.append(os.path.join(root, filename))
         else:
-            self.log_signal.emit(f"The directory '{directory}' does not exist.", 0)
-            self.log_signal.emit(f"Current working directory: {os.getcwd()}", 0)
-            self.log_signal.emit(f"Absolute path: {os.path.abspath(directory)}", 0)
+            self.log_signal.emit(f"The directory '{directory}' does not exist.", 0, False)
+            self.log_signal.emit(f"Current working directory: {os.getcwd()}", 0, False)
+            self.log_signal.emit(f"Absolute path: {os.path.abspath(directory)}", 0, False)
         return files
 
     # Given a start directory and a target file name, recursively search the 
@@ -190,7 +190,7 @@ class autoDITWorker(QThread):
 
     def extract_frames(self, videopath, sec, width, height, tail=False):
         # Get the duration of the video
-        self.log_signal.emit("Checking video duration", 1)
+        self.log_signal.emit("Checking video duration", 1, False)
         duration_cmd = [self.dependencies['ffprobe'], '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', videopath]
         duration = float(subprocess.check_output(duration_cmd))
 
@@ -203,12 +203,12 @@ class autoDITWorker(QThread):
             end_time = min(sec, duration)
         
         # Extract frames from the video
-        self.log_signal.emit("Extracting frames", 1)
+        self.log_signal.emit("Extracting frames", 1, False)
         extract_cmd = [self.dependencies['ffmpeg'], '-i', videopath, '-ss', str(start_time), '-t', str(end_time - start_time), '-vf', f'scale=w={width}:h={height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2' + (',vflip,hflip' if tail else ''), '-q:v', '2', '-f', 'image2pipe', '-pix_fmt', 'rgb24', '-vcodec', 'rawvideo', '-']
         result = subprocess.run(extract_cmd, stderr=subprocess.DEVNULL, stdout=subprocess.PIPE)
         frames_raw = result.stdout
         
-        self.log_signal.emit("Converting buffer to numpy array", 1)
+        self.log_signal.emit("Converting buffer to numpy array", 1, False)
         # Convert the frame buffer to a numpy array
         frames = np.frombuffer(frames_raw, dtype=np.uint8)
         frames = frames.reshape((-1, height, width, 3))
