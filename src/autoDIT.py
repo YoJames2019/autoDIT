@@ -100,7 +100,7 @@ class autoDITWorker(QThread):
             new_filepath = os.path.join(self.output_dir, "Manual Review Required")
             if detected is not None and (f"{detected['formatted_results']}." in filename.lower() or f"{detected['formatted_results']}_proxy." in filename.lower()):
                 # if it is, it will move the video file to the correct directory
-                new_filepath = os.path.join(self.output_dir, f"Scene {scene}/{'Proxy' if proxy else '4K'}")
+                new_filepath = os.path.join(self.output_dir, f"Scene {scene}\{'Proxy' if proxy else '4K'}")
                 self.log_signal.emit(f"Correct filename", 1)
             else:
                 # if not, move the video file to the "Manual Review Required" directory
@@ -138,21 +138,21 @@ class autoDITWorker(QThread):
 
             # convert the scene, shot, and take to the correct format
             cnv_scene = scene.zfill(3)
-            cnv_shot = str(ord(shot.lower()) - ord('a') + 1).zfill(3)
+            cnv_shot = "RoomTone" if shot.lower() == "rt" else str(ord(shot.lower()) - ord('a') + 1).zfill(3)
             cnv_take = take.zfill(3)
 
             self.log_signal.emit("Found Scene Data: ", 1)
             self.log_signal.emit(f"Scene: {scene} -> {cnv_scene}", 2)
             self.log_signal.emit(f"Shot: {shot} -> {cnv_shot}", 2)
             self.log_signal.emit(f"Take: {take} -> {cnv_take}", 2)
-            new_filename = f"S{cnv_scene}_S{cnv_shot}_T{cnv_take}{os.path.splitext(filename)[1]}"
+            new_filename = f"S{cnv_scene}_{'S' if cnv_shot.isdigit() else ''}{cnv_shot}_T{cnv_take}{os.path.splitext(filename)[1]}"
             
             self.log_signal.emit(f"Correct format, renaming to {new_filename}", 1)
 
-            new_filepath = os.path.join(self.output_dir, f'Scene {cnv_scene}/Audio')
+            new_filepath = os.path.join(self.output_dir, f'Scene {cnv_scene}\Audio')
 
             self.log_signal.emit(f"Moving file to {new_filename}", 1)
-            self.copy_file_safe(audio_filepath, os.path.join(self.output_dir, f"Scene {cnv_scene}/Audio"), new_filename)
+            self.copy_file_safe(audio_filepath, os.path.join(self.output_dir, f"Scene {cnv_scene}\Audio"), new_filename)
 
             self.progress_bar_signal.emit(1)
 
@@ -321,7 +321,9 @@ class autoDITWorker(QThread):
                         self.image_preview_signal.emit(result.plot())
                         if(len(confs) > 0 and len(groups) == 4 and len(groups[-1]) == 3):
                             raw_results_arr.append({'frame_plotted': result.plot(), 'conf': round(sum(confs)/len(confs), 4),'clapboard_info': [str(r[0][4])+str(r[1][4])+str(r[2][4]) for r in groups]})
-
+                    else:
+                        self.image_preview_signal.emit(frame)
+                else: self.image_preview_signal.emit(frame)
             if(len(raw_results_arr) > 0):
                 clapboard_results_dict = {}
                 for i, res in enumerate(raw_results_arr):
