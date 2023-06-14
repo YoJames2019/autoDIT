@@ -18,9 +18,16 @@ class autoDITWorker(QThread):
 
     def __init__(self, input_video_dir, input_audio_dir, output_dir, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.src_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+        self.clapboard_model = YOLO(os.path.join(self.src_dir, "weights/clapboard_best.pt"))
+        self.clapboard_text_model = YOLO(os.path.join(self.src_dir, "weights/clapboard_text_best.pt"))
 
-        self.clapboard_model = YOLO("./weights_final/clapboard_best.pt")
-        self.clapboard_text_model = YOLO("./weights_final/clapboard_text_best.pt")
+        self.dependencies = {
+            'ffprobe': os.path.join(self.src_dir, "dependencies\\FFmpeg\\bin\\ffprobe.exe"),
+            'ffmpeg': os.path.join(self.src_dir, "dependencies\\FFmpeg\\bin\\ffmpeg.exe"),
+            'ffplay': os.path.join(self.src_dir, "dependencies\\FFmpeg\\bin\\ffplay.exe")
+        }
+
         self.num_conversions = {
             'one': 1,
             'two': 2,
@@ -38,11 +45,12 @@ class autoDITWorker(QThread):
         self.audio_dir = input_audio_dir
         self.output_dir = output_dir
 
-        self.log_signal.emit(f"Using GPU: {torch.cuda.is_available()}", 0)
 
 
     def run(self):
 
+        self.log_signal.emit(f"Using GPU: {torch.cuda.is_available()}", 0)
+        
         self.log_signal.emit(f"Looking for videos in {self.video_dir}", 0)
         # loop through all videos in a certain directory and all subdirectories
         videopaths = self.find_files(self.video_dir, extensions=["*.mp4", "*.mov"])
@@ -61,7 +69,7 @@ class autoDITWorker(QThread):
             filename = os.path.basename(videopath)
             proxy = "_proxy" in filename
 
-            frames = self.extract_frames(videopath, 10, 800, 800)
+            frames = self.extract_frames(videopath, 10, 1600, 1600)
             
             self.log_signal.emit("Checking for clapboard", 1)
             detected = self.detect_best_clapboard_info(frames)
@@ -70,7 +78,7 @@ class autoDITWorker(QThread):
             if detected is None:
                 self.log_signal.emit("No clapboard detected, checking for tailslate", 1)
                 # it will pass the video back to the parser with tail=True
-                frames = self.extract_frames(videopath, 10, 800, 800, True)
+                frames = self.extract_frames(videopath, 10, 1600, 1600, True)
                 detected = self.detect_best_clapboard_info(frames)
             
             # if it still couldnt find a clapboard, set all the below variables to none 
@@ -89,19 +97,17 @@ class autoDITWorker(QThread):
 
             # if it found all this correctly, it will then check
             # if the video file name is the same as predicted:
+            new_filepath = os.path.join(self.output_dir, "Manual Review Required")
             if detected is not None and (f"{detected['formatted_results']}." in filename.lower() or f"{detected['formatted_results']}_proxy." in filename.lower()):
-
-                self.log_signal.emit("Correct filename", 1)
-                # move the video to its correct directory
-                self.copy_file_safe(videopath, os.path.join(self.output_dir, f"Scene {scene}/{'Proxy' if proxy else '4K'}"))
-
-
+                # if it is, it will move the video file to the correct directory
+                new_filepath = os.path.join(self.output_dir, f"Scene {scene}/{'Proxy' if proxy else '4K'}")
+                self.log_signal.emit(f"Correct filename", 1)
             else:
                 # if not, move the video file to the "Manual Review Required" directory
                 self.log_signal.emit("Incorrect filename", 1)
-                
-                self.copy_file_safe(videopath, os.path.join(self.output_dir, "Manual Review Required"))
-        
+
+            self.log_signal.emit(f"Moving file to {new_filepath}", 1)
+            self.copy_file_safe(videopath, new_filepath)
             self.progress_bar_signal.emit(1)
 
         # convert the audio file names (ex. 24B_T1.wav) to the correct format (ex. S024_S002_T001.wav)
@@ -119,7 +125,11 @@ class autoDITWorker(QThread):
             # if not, move the audio file to the "Manual Review Required" directory and skip to the next audio file
             if not matched or len(matched.groups()) != 3:
                 self.log_signal.emit("Incorrect audio format, cannot convert", 1)
-                self.copy_file_safe(audio_filepath, os.path.join(self.output_dir, "Manual Review Required"))
+
+                new_filename = os.path.join(self.output_dir, "Manual Review Required")
+                self.log_signal.emit(f"Moving file to {new_filename}", 1)
+
+                self.copy_file_safe(audio_filepath, new_filename)
                 self.progress_bar_signal.emit(1)
                 continue
             
@@ -138,36 +148,50 @@ class autoDITWorker(QThread):
             new_filename = f"S{cnv_scene}_S{cnv_shot}_T{cnv_take}{os.path.splitext(filename)[1]}"
             
             self.log_signal.emit(f"Correct format, renaming to {new_filename}", 1)
+
+            new_filepath = os.path.join(self.output_dir, f'Scene {cnv_scene}/Audio')
+
+            self.log_signal.emit(f"Moving file to {new_filename}", 1)
             self.copy_file_safe(audio_filepath, os.path.join(self.output_dir, f"Scene {cnv_scene}/Audio"), new_filename)
 
             self.progress_bar_signal.emit(1)
 
 
+    # find_files will search through the given directory and return a list of files that match the given extensions
     def find_files(self, directory, extensions=['*.mp4', '*.mov']):
         files = []
         if os.path.exists(directory):
+            # os.walk will walk through all the files in the given directory
             for root, dirnames, filenames in os.walk(directory):
+                # fnmatch.filter is a UNIX style filename pattern matching function, e.g. *.mp4
                 for extension in extensions:
                     for filename in fnmatch.filter(filenames, extension):
                         files.append(os.path.join(root, filename))
-
         else:
             self.log_signal.emit(f"The directory '{directory}' does not exist.", 0)
             self.log_signal.emit(f"Current working directory: {os.getcwd()}", 0)
             self.log_signal.emit(f"Absolute path: {os.path.abspath(directory)}", 0)
         return files
 
+    # Given a start directory and a target file name, recursively search the 
+    # start directory for the target file name. Return the path to the target 
+    # file if found, or None if it is not found.
     def search_dir(self, start_dir, target_file):
+        # Iterate through all directories in the start directory. 
+        # For each directory, iterate through all files in that directory.
         for dirpath, dirnames, filenames in os.walk(start_dir):
             for filename in filenames:
+                # If the filename matches the target file name, return the path
+                # to the target file.
                 if filename == target_file:
                     return os.path.join(dirpath, filename)
+        # If no match is found, return None.
         return None
 
     def extract_frames(self, videopath, sec, width, height, tail=False):
         # Get the duration of the video
         self.log_signal.emit("Checking video duration", 1)
-        duration_cmd = ['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', videopath]
+        duration_cmd = [self.dependencies['ffprobe'], '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', videopath]
         duration = float(subprocess.check_output(duration_cmd))
 
         # Calculate the start and end times
@@ -180,7 +204,7 @@ class autoDITWorker(QThread):
         
         # Extract frames from the video
         self.log_signal.emit("Extracting frames", 1)
-        extract_cmd = ['ffmpeg', '-i', videopath, '-ss', str(start_time), '-t', str(end_time - start_time), '-vf', f'scale=w={width}:h={height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2' + (',vflip,hflip' if tail else ''), '-q:v', '2', '-f', 'image2pipe', '-pix_fmt', 'rgb24', '-vcodec', 'rawvideo', '-']
+        extract_cmd = [self.dependencies['ffmpeg'], '-i', videopath, '-ss', str(start_time), '-t', str(end_time - start_time), '-vf', f'scale=w={width}:h={height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2' + (',vflip,hflip' if tail else ''), '-q:v', '2', '-f', 'image2pipe', '-pix_fmt', 'rgb24', '-vcodec', 'rawvideo', '-']
         result = subprocess.run(extract_cmd, stderr=subprocess.DEVNULL, stdout=subprocess.PIPE)
         frames_raw = result.stdout
         
@@ -296,12 +320,11 @@ class autoDITWorker(QThread):
 
                         self.image_preview_signal.emit(result.plot())
                         if(len(confs) > 0 and len(groups) == 4 and len(groups[-1]) == 3):
-                            raw_results_arr.append({'frame': frame, 'frame_plotted': result.plot(), 'conf': round(sum(confs)/len(confs), 4), 'boxes': groups, 'clapboard_info': [str(r[0][4])+str(r[1][4])+str(r[2][4]) for r in groups]})
+                            raw_results_arr.append({'frame_plotted': result.plot(), 'conf': round(sum(confs)/len(confs), 4),'clapboard_info': [str(r[0][4])+str(r[1][4])+str(r[2][4]) for r in groups]})
 
             if(len(raw_results_arr) > 0):
-                # TODO: change this so that it counts how many results are the same and then returns the one with the most matches
                 clapboard_results_dict = {}
-                for res in raw_results_arr:
+                for i, res in enumerate(raw_results_arr):
                     scene, cam, shot, take = res['clapboard_info'] if res else [-1, -1, -1, -1]
 
                     formatted_info = f"s{scene}_s{shot}_t{take}"
@@ -311,7 +334,6 @@ class autoDITWorker(QThread):
                         clapboard_results_dict[formatted_info] = {'frame': res['frame_plotted'], 'formatted_results': formatted_info, 'clapboard_info': res['clapboard_info'], 'conf': res['conf'], 'count': 1}
 
                     clapboard_results_dict[formatted_info]['count'] += 1
-                
                 return max(clapboard_results_dict.values(), key=lambda r: r['count'])
             else:
                 return None

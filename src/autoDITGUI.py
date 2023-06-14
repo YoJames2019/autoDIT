@@ -11,6 +11,7 @@ if missing:
     subprocess.check_call([python, '-m', 'pip', 'install', *missing], stdout=subprocess.DEVNULL)
 
 import cv2
+import os
 from PyQt6.QtWidgets import (
   QApplication, 
   QWidget, 
@@ -28,9 +29,12 @@ from PyQt6.QtCore import pyqtSlot, QTimer, QThread, pyqtSignal
 from pathlib import Path
 from functools import partial
 from autoDIT import autoDITWorker
+
 class MainWindow(QWidget):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+        self.src_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 
         self.setWindowTitle('AutoDIT')
         
@@ -80,7 +84,7 @@ class MainWindow(QWidget):
         self.image_preview = QLabel(self)
         self.image_preview.setFixedSize(800, 800)
         self.image_preview.setScaledContents(True)
-        self.set_image_preview("./assets/AutoDIT BG.png")
+        self.set_image_preview(os.path.join(self.src_dir, "assets/AutoDIT BG.png"))
 
         previewLayout.addWidget(self.image_preview, 1, 0)
 
@@ -174,7 +178,7 @@ class MainWindow(QWidget):
 
     def autoDIT_finished(self):
         self.run_button.setEnabled(True)
-        self.set_image_preview("./assets/AutoDIT BG.png")
+        self.set_image_preview(os.path.join(self.src_dir, "assets/AutoDIT BG.png"))
 
 
 if __name__ == '__main__':
