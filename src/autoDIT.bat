@@ -1,3 +1,3 @@
 @echo off
-python C:\Users\$USER\autoDIT\autoDIT.py
+python C:\Users\%USERNAME%\autoDIT\autoDIT.py
 
