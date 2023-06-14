@@ -59,15 +59,18 @@ class MainWindow(QWidget):
 
         setupLayout.addWidget(QLabel("Film Video Folder:"), 0, 0)
         setupLayout.addWidget(self.video_dir_view, 0, 1)
-        setupLayout.addWidget(QPushButton('Browse', clicked=partial(self.open_file_dialog, self.video_dir_view)), 0, 2)
+        self.video_browse_button = QPushButton('Browse', clicked=partial(self.open_file_dialog, self.video_dir_view))
+        setupLayout.addWidget(self.video_browse_button, 0, 2)
 
         setupLayout.addWidget(QLabel("Film Audio Folder:"), 1, 0)
         setupLayout.addWidget(self.audio_dir_view, 1, 1)
-        setupLayout.addWidget(QPushButton('Browse', clicked=partial(self.open_file_dialog, self.audio_dir_view)), 1, 2)
+        self.audio_browse_button = QPushButton('Browse', clicked=partial(self.open_file_dialog, self.audio_dir_view))
+        setupLayout.addWidget(self.audio_browse_button, 1, 2)
 
         setupLayout.addWidget(QLabel("AutoDIT Output Folder:"), 2, 0)
         setupLayout.addWidget(self.output_dir_view, 2, 1)
-        setupLayout.addWidget(QPushButton('Browse', clicked=partial(self.open_file_dialog, self.output_dir_view)), 2, 2)
+        self.output_browse_button = QPushButton('Browse', clicked=partial(self.open_file_dialog, self.output_dir_view))
+        setupLayout.addWidget(self.output_browse_button, 2, 2)
 
 
         self.run_button = QPushButton('Run AutoDIT', clicked=self.run_autoDIT)
@@ -134,7 +137,10 @@ class MainWindow(QWidget):
 
 
         self.run_button.setEnabled(False)
-
+        self.video_browse_button.setEnabled(False)
+        self.audio_browse_button.setEnabled(False)
+        self.output_browse_button.setEnabled(False)
+        
         self.DITThread = autoDITWorker(self.video_dir_view.text(), self.audio_dir_view.text(), self.output_dir_view.text())
         self.DITThread.progress.connect(self.update_ui)
         self.DITThread.image_preview_signal.connect(self.set_image_preview)
@@ -178,6 +184,9 @@ class MainWindow(QWidget):
 
     def autoDIT_finished(self):
         self.run_button.setEnabled(True)
+        self.video_browse_button.setEnabled(True)
+        self.audio_browse_button.setEnabled(True)
+        self.output_browse_button.setEnabled(True)
         self.set_image_preview(os.path.join(self.src_dir, "assets/AutoDIT BG.png"))
 
 
