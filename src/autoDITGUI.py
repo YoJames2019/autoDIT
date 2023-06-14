@@ -129,7 +129,7 @@ class MainWindow(QWidget):
     def run_autoDIT(self):
         self.add_log("Running AutoDIT")
         self.add_log(f"Video Folder: {self.video_dir_view.text()}")
-        self.add_log(f"Audio Folder: {self.output_dir_view.text()}")
+        self.add_log(f"Audio Folder: {self.audio_dir_view.text()}")
         self.add_log(f"Output Folder: {self.output_dir_view.text()}\n")
 
 
