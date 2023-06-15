@@ -12,7 +12,7 @@ from PyQt6.QtCore import pyqtSignal, QThread
 class autoDITWorker(QThread):
     progress = pyqtSignal(int)
     image_preview_signal = pyqtSignal(object)
-    log_signal = pyqtSignal(str, int)
+    log_signal = pyqtSignal(str, int, bool)
     progress_bar_signal = pyqtSignal(int)
     progress_bar_range_signal = pyqtSignal(int, int)
 
